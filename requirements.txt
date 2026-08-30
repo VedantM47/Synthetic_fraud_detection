@@ -1,0 +1,7 @@
+faker>=24,<25
+numpy>=2,<3
+pandas>=2,<3
+python-dateutil>=2,<3
+pytest>=8,<9
+jupyter>=1,<2
+
