@@ -4,4 +4,4 @@ pandas>=2,<3
 python-dateutil>=2,<3
 pytest>=8,<9
 jupyter>=1,<2
-
+scikit-learn>=1.4

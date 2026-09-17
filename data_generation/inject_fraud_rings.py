@@ -53,11 +53,21 @@ def generate_fraud_rings(fake: Faker, rng: np.random.Generator):
             for _ in range(ring_size)
         ]
         shared_bundle = create_attribute_bundle(fake, rng, ring_customers[0]["customer_id"])
+        sharing_probability = float(
+            rng.uniform(
+                config.FRAUD_MEMBER_SHARED_ATTRIBUTE_MIN_PROB,
+                config.FRAUD_MEMBER_SHARED_ATTRIBUTE_MAX_PROB,
+            )
+        )
+        anchor_shared_type = str(rng.choice(shared_types))
 
-        for customer in ring_customers:
+        for index, customer in enumerate(ring_customers):
             bundle = create_attribute_bundle(fake, rng, customer["customer_id"])
             for attribute_type in shared_types:
-                bundle[attribute_type] = shared_bundle[attribute_type]
+                if index < 2 and attribute_type == anchor_shared_type:
+                    bundle[attribute_type] = shared_bundle[attribute_type]
+                elif index == 0 or rng.random() < sharing_probability:
+                    bundle[attribute_type] = shared_bundle[attribute_type]
             for attribute_type, value in bundle.items():
                 if value not in tables[attribute_type]:
                     tables[attribute_type].append(value)

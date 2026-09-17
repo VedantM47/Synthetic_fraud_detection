@@ -56,10 +56,33 @@ def generate_legitimate_events(row: pd.Series, rng: np.random.Generator) -> list
             utilization - float(rng.uniform(config.LEGIT_PAYMENT_DROP_MIN, config.LEGIT_PAYMENT_DROP_MAX)),
         )
         events.append(event(rng, customer_id, event_date + timedelta(days=int(rng.integers(config.PAYMENT_DAY_MIN, config.PAYMENT_DAY_MAX + 1))), "payment", limit, utilization))
+    if len(dates) > 1 and rng.random() < config.LEGIT_HIGH_UTILIZATION_CHANCE:
+        start_date = dates[int(rng.integers(1, len(dates)))]
+        for index in range(
+            int(
+                rng.integers(
+                    config.LEGIT_HIGH_UTILIZATION_EVENTS_MIN,
+                    config.LEGIT_HIGH_UTILIZATION_EVENTS_MAX + 1,
+                )
+            )
+        ):
+            events.append(
+                event(
+                    rng,
+                    customer_id,
+                    start_date + timedelta(days=index * int(rng.integers(1, 4))),
+                    "purchase",
+                    limit,
+                    float(rng.uniform(config.LEGIT_HIGH_UTILIZATION_MIN, config.LEGIT_HIGH_UTILIZATION_MAX)),
+                )
+            )
     return events
 
 
 def generate_fraud_events(row: pd.Series, rng: np.random.Generator) -> list[dict]:
+    if rng.random() > config.FRAUD_BUSTOUT_CHANCE:
+        return generate_legitimate_events(row, rng)
+
     customer_id = row["customer_id"]
     open_date = pd.Timestamp(row["account_open_date"])
     end_date = pd.Timestamp(config.SIMULATION_END_DATE)

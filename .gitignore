@@ -3,3 +3,8 @@ __pycache__/
 data/raw/*.csv
 .ipynb_checkpoints/
 .pytest_cache/
+
+# Generated model outputs (keep folder structure via .gitkeep)
+outputs/**/*.csv
+outputs/**/*.txt
+outputs/**/*.png
