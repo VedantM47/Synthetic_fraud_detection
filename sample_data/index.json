@@ -1,0 +1,5 @@
+{
+  "bank_customers_labeled.csv": "1,650 customers in a bank-style export with a Yes/No 'Is Fraud' column and a 'Ring Ref' column. Upload it to train on your labels, or choose 'evaluate only' to test the reference model against them.",
+  "bank_customers_unlabeled.csv": "The same customers without any labels: the app scores them with the reference model and still surfaces the fraud rings.",
+  "bank_account_events.csv": "33,126 account events for the customers above (optional events file)."
+}

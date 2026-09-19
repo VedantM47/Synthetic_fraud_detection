@@ -1,0 +1,4 @@
+# Optional: only needed for the contrastive pretraining experiment
+# (python -m src.models.contrastive_pretraining). The CPU build is enough:
+#   pip install -r requirements-contrastive.txt --index-url https://download.pytorch.org/whl/cpu
+torch>=2.2

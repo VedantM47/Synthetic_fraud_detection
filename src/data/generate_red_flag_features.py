@@ -1,5 +1,4 @@
 import argparse
-from collections import defaultdict
 from pathlib import Path
 import pandas as pd
 
@@ -19,6 +18,21 @@ def load_edges(csv_path: Path) -> pd.DataFrame:
     return pd.read_csv(csv_path)
 
 
+CORE_FLAG_COLUMNS = ["shared_phone", "shared_email", "shared_address", "shared_device"]
+
+
+def edge_flag_columns(edges: pd.DataFrame) -> list[str]:
+    """Core shared-attribute flags plus any extra ``shared_<type>`` flags."""
+    extra = [
+        column
+        for column in edges.columns
+        if column.startswith("shared_")
+        and column != "shared_attribute_count"
+        and column not in CORE_FLAG_COLUMNS
+    ]
+    return CORE_FLAG_COLUMNS + extra
+
+
 def compute_features(edges: pd.DataFrame) -> pd.DataFrame:
     """Compute red‑flag network features per customer.
 
@@ -28,57 +42,39 @@ def compute_features(edges: pd.DataFrame) -> pd.DataFrame:
         email_shared_count
         address_shared_count
         device_shared_count
+        <extra type>_shared_count (one per extra ``shared_<type>`` edge flag)
         network_degree
         shared_attribute_count
+
+    Each ``*_shared_count`` is the number of other customers this customer
+    shares that attribute type with. Only customers that appear in at least
+    one edge are returned, sorted by ``customer_id``.
     """
-    # Initialize counters
-    phone_cnt = defaultdict(int)
-    email_cnt = defaultdict(int)
-    address_cnt = defaultdict(int)
-    device_cnt = defaultdict(int)
-    degree_cnt = defaultdict(int)
-    attr_cnt = defaultdict(int)  # sum of shared_attribute_count per incident edge
+    flag_columns = edge_flag_columns(edges)
+    for column in flag_columns:
+        if column not in edges.columns:
+            edges = edges.assign(**{column: 0})
+    count_columns = [f"{column.removeprefix('shared_')}_shared_count" for column in flag_columns]
+    output_columns = ["customer_id", *count_columns, "network_degree", "shared_attribute_count"]
+    if edges.empty:
+        return pd.DataFrame(columns=output_columns)
 
-    for _, row in edges.iterrows():
-        src = row["source_customer_id"]
-        tgt = row["target_customer_id"]
-        # degree increases by one for each incident edge
-        degree_cnt[src] += 1
-        degree_cnt[tgt] += 1
-        # shared attribute counts (binary flags)
-        if row["shared_phone"]:
-            phone_cnt[src] += 1
-            phone_cnt[tgt] += 1
-        if row["shared_email"]:
-            email_cnt[src] += 1
-            email_cnt[tgt] += 1
-        if row["shared_address"]:
-            address_cnt[src] += 1
-            address_cnt[tgt] += 1
-        if row["shared_device"]:
-            device_cnt[src] += 1
-            device_cnt[tgt] += 1
-        # sum of shared attribute count per edge
-        shared_attr = row["shared_attribute_count"]
-        if shared_attr:
-            attr_cnt[src] += shared_attr
-            attr_cnt[tgt] += shared_attr
-
-    # Gather all unique customers observed in the edge list
-    all_customers = set(degree_cnt.keys())
-    # Build rows
-    rows = []
-    for cust in sorted(all_customers):
-        rows.append({
-            "customer_id": cust,
-            "phone_shared_count": phone_cnt.get(cust, 0),
-            "email_shared_count": email_cnt.get(cust, 0),
-            "address_shared_count": address_cnt.get(cust, 0),
-            "device_shared_count": device_cnt.get(cust, 0),
-            "network_degree": degree_cnt.get(cust, 0),
-            "shared_attribute_count": attr_cnt.get(cust, 0),
-        })
-    return pd.DataFrame(rows)
+    value_columns = [*flag_columns, "shared_attribute_count"]
+    # Each undirected edge contributes to both of its endpoints.
+    endpoint_rows = pd.concat(
+        [
+            edges[["source_customer_id", *value_columns]].rename(columns={"source_customer_id": "customer_id"}),
+            edges[["target_customer_id", *value_columns]].rename(columns={"target_customer_id": "customer_id"}),
+        ],
+        ignore_index=True,
+    )
+    endpoint_rows[flag_columns] = endpoint_rows[flag_columns].astype(bool).astype("int64")
+    grouped = endpoint_rows.groupby("customer_id", sort=True)
+    features = grouped[value_columns].sum()
+    features["network_degree"] = grouped.size()
+    features = features.rename(columns=dict(zip(flag_columns, count_columns))).reset_index()
+    features[output_columns[1:]] = features[output_columns[1:]].astype("int64")
+    return features[output_columns]
 
 
 def save_features(df: pd.DataFrame, out_path: Path) -> None:

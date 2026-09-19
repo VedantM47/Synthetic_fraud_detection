@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
 import pandas as pd
 
@@ -15,8 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 RAW_DIR = ROOT / "data" / "raw"
 
 
-def write_csv(name: str, frame: pd.DataFrame) -> None:
-    frame.to_csv(RAW_DIR / config.OUTPUT_FILES[name], index=False)
+def write_csv(name: str, frame: pd.DataFrame, out_dir: Path = RAW_DIR) -> None:
+    frame.to_csv(out_dir / config.OUTPUT_FILES[name], index=False)
 
 
 def add_fraud_legitimate_overlap(links: pd.DataFrame, customers: pd.DataFrame, rng) -> pd.DataFrame:
@@ -60,14 +61,41 @@ def ensure_minimum_ring_sharing(links: pd.DataFrame, ring_ground_truth: pd.DataF
     return links
 
 
-def generate_all() -> dict[str, pd.DataFrame]:
-    RAW_DIR.mkdir(parents=True, exist_ok=True)
-    rng = make_rng()
-    fake = make_faker()
+def generate_all(
+    seed: int = config.RANDOM_SEED,
+    n_legitimate: int | None = None,
+    n_fraud: int | None = None,
+    out_dir: Path | None = None,
+    write: bool = True,
+    progress: Callable[[float, str], None] | None = None,
+) -> dict[str, pd.DataFrame]:
+    """Generate the full synthetic dataset.
 
-    legitimate_customers = generate_legitimate_customers(fake, rng)
+    Defaults reproduce the canonical dataset in ``data/raw``. The optional
+    arguments let the web app generate differently sized or seeded datasets
+    into their own folder without touching the research outputs, and report
+    progress between steps via ``progress(fraction, message)``.
+    """
+    report = progress or (lambda fraction, message: None)
+    if n_legitimate is None:
+        n_legitimate = config.N_LEGITIMATE_CUSTOMERS
+    if n_fraud is None:
+        n_fraud = config.N_FRAUD_RING_CUSTOMERS
+    if n_legitimate < config.BENIGN_HOUSEHOLD_MAX_SIZE or n_fraud < config.MIN_RING_SIZE:
+        raise ValueError(
+            f"Need at least {config.BENIGN_HOUSEHOLD_MAX_SIZE} legitimate and "
+            f"{config.MIN_RING_SIZE} fraud customers."
+        )
+    out_dir = RAW_DIR if out_dir is None else Path(out_dir)
+    rng = make_rng(seed)
+    fake = make_faker(seed)
+
+    report(0.02, "Creating legitimate customer profiles")
+    legitimate_customers = generate_legitimate_customers(fake, rng, n_legitimate)
+    report(0.15, "Creating identity details, households and shared contact phones")
     legitimate_tables = generate_unique_attributes(legitimate_customers, fake, rng)
-    fraud_tables = generate_fraud_rings(fake, rng)
+    report(0.45, "Injecting fraud rings")
+    fraud_tables = generate_fraud_rings(fake, rng, n_fraud)
 
     customers = pd.concat([legitimate_customers, fraud_tables[0]], ignore_index=True)
     phones = pd.concat([legitimate_tables[0], fraud_tables[1]], ignore_index=True)
@@ -77,9 +105,10 @@ def generate_all() -> dict[str, pd.DataFrame]:
     links = pd.concat([legitimate_tables[4], fraud_tables[5]], ignore_index=True)
     ring_ground_truth = fraud_tables[6]
 
-    customers = customers.sample(frac=1, random_state=config.RANDOM_SEED).reset_index(drop=True)
+    customers = customers.sample(frac=1, random_state=seed).reset_index(drop=True)
     links = add_fraud_legitimate_overlap(links, customers, rng)
     links = ensure_minimum_ring_sharing(links, ring_ground_truth)
+    report(0.55, "Simulating account activity (purchases, payments, bust-outs)")
     events = generate_temporal_events(customers, rng)
 
     output = {
@@ -92,8 +121,11 @@ def generate_all() -> dict[str, pd.DataFrame]:
         "events": events,
         "ring_ground_truth": ring_ground_truth,
     }
-    for name, frame in output.items():
-        write_csv(name, frame)
+    if write:
+        report(0.95, "Writing CSV files")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for name, frame in output.items():
+            write_csv(name, frame, out_dir)
     return output
 
 

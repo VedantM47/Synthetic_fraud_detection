@@ -8,3 +8,11 @@ data/raw/*.csv
 outputs/**/*.csv
 outputs/**/*.txt
 outputs/**/*.png
+
+# Web app runtime data (database, uploads, generated datasets)
+storage/
+
+# Frontend dependencies and build output
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
