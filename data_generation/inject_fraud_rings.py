@@ -12,12 +12,12 @@ from data_generation.generate_identity_attributes import (
 )
 
 
-def sample_ring_sizes(rng: np.random.Generator) -> list[int]:
+def sample_ring_sizes(rng: np.random.Generator, n_customers: int | None = None) -> list[int]:
     sizes = np.array(list(config.RING_SIZE_DISTRIBUTION.keys()))
     probabilities = np.array(list(config.RING_SIZE_DISTRIBUTION.values()), dtype=float)
     probabilities = probabilities / probabilities.sum()
     result = []
-    remaining = config.N_FRAUD_RING_CUSTOMERS
+    remaining = config.N_FRAUD_RING_CUSTOMERS if n_customers is None else n_customers
     while remaining:
         allowed = sizes[sizes <= remaining]
         allowed_probabilities = probabilities[: len(allowed)]
@@ -30,13 +30,13 @@ def sample_ring_sizes(rng: np.random.Generator) -> list[int]:
     return result
 
 
-def generate_fraud_rings(fake: Faker, rng: np.random.Generator):
+def generate_fraud_rings(fake: Faker, rng: np.random.Generator, n_customers: int | None = None):
     fraud_customers = []
     tables = {attribute_type: [] for attribute_type in config.ATTRIBUTE_TYPES}
     links = []
     ground_truth = []
 
-    for ring_number, ring_size in enumerate(sample_ring_sizes(rng), start=config.RING_NUMBER_START):
+    for ring_number, ring_size in enumerate(sample_ring_sizes(rng, n_customers), start=config.RING_NUMBER_START):
         ring_id = f"{config.RING_ID_PREFIX}_{ring_number:0{config.RING_ID_WIDTH}d}"
         shared_types = rng.choice(
             config.ATTRIBUTE_TYPES,

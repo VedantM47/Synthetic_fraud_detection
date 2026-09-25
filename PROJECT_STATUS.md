@@ -1,5 +1,37 @@
 # Project Status
 
+## Weeks 6–8: Finish Frontend, Integrate, Explain & Polish — DONE
+
+| Planned item | Status | Where |
+|---|---|---|
+| Interactive graph viewer | Done | `frontend/src/components/GraphView.tsx`, Network page: packed view of every suspected ring, filters by score, link type and review status, colour by model risk or known labels, click / double-click navigation |
+| Customer detail page (risk score + connections) | Done | Customer page: score against the threshold, plain-English explanation, factor chart, 1–2 hop connection graph, linked accounts with the exact shared values, identity details, activity timeline, feature values |
+| Fraud-ring review screen, feeding back into the model | Done | Ring review page: confirm / dismiss with notes and per-member selection, audit history, auto-advance; decisions become labels; **Retrain with feedback** creates a new model version with like-for-like before/after metrics |
+| Live progress updates while a job runs | Done | Per-stage progress persisted by `backend/jobs.py`, streamed over SSE (`/api/jobs/{id}/stream`) with a polling fallback |
+| End-to-end wiring: upload → graph → training → database → frontend | Done | `backend/pipeline/runner.py`, SQLite in `backend/db.py`, FastAPI in `backend/main.py`, React app served by the backend |
+| Plain-English explanation per risk score | Done | `backend/pipeline/explain.py`: baseline Shapley attributions turned into sentences such as "flagged because it shares an email address with 6 other accounts" |
+| Works on the user's own dataset | Done | Column-role detection and normalisation (`backend/pipeline/ingest.py`), labels optional (a reference model is used without them), sample files in another format in `sample_data/` |
+| End-to-end testing and bug fixing | Done | `tests/test_app.py` (API end to end), `tests/test_contrastive.py`; 18 tests pass. Every page was also driven in a real browser. |
+| README and demo | Done | `README.md` (setup, usage, architecture, results, 7-minute demo script), `python -m backend.cli demo` to preload data |
+| Stretch: contrastive pretraining bolt-on | Done (optional) | `src/models/contrastive_pretraining.py`: GRACE-style GCN, results below |
+| Temporal modelling | Deferred as planned | Written up as scoped future work in the README |
+
+### Bugs found and fixed while integrating
+
+- **HistGradientBoosting results depended on CSV parsing noise.** `random_forest_baseline` read feature CSVs with pandas' default float parser, which changes thousands of values by one ulp. Random Forest hides this because it casts to float32; HistGradientBoosting did not. The runner now reads with `float_precision="round_trip"`. Two HistGradientBoosting rows changed (table below), and the research runner and the app now agree exactly.
+- **Temporal features took 16 s for 8,800 customers.** They are now vectorised (0.6 s) and bit-identical to the old per-customer loop; so is the network feature computation.
+- **Data generation had no size or seed controls** and always wrote to `data/raw`. `generate_all()` now takes `seed`, `n_legitimate`, `n_fraud`, `out_dir` and `progress`, and the defaults reproduce the canonical data byte for byte.
+- **Explanation quality.** Single-feature occlusion saturates for customers with redundant red flags: resetting one shared attribute leaves the score at 100. Replaced with baseline Shapley sampling, whose contributions add up exactly to the score. The written reasons are always the largest contributions.
+- **Unfair version comparisons.** After a retrain, reviewed customers are excluded from evaluation, which removes the easiest positives. Each version is now also compared with the previous version's scores on the same customers.
+
+### Weeks 6–8 metrics
+
+App, synthetic demo (seed 42), 5-fold ring-aware out-of-fold scores: ROC-AUC 0.957, PR-AUC 0.915. At the F1-optimal threshold, precision is 94.2% (678 of 720 alerts) and recall 84.8%. There are 196 suspected rings among 943 linked groups: 94.4% of them are mostly fraud, and they contain 84.1% of fraud customers and recover 88.9% of the 216 true rings.
+
+Own-data sample (`sample_data/`, different population and format, labels hidden): ROC-AUC 0.948 and PR-AUC 0.896 from the reference model; 32 suspected rings, 87.5% mostly fraud, 82.9% of true rings recovered. Without any labels or events, 33 suspected rings are still found.
+
+Contrastive pretraining (3 seeds): label-free embeddings alone reach ROC-AUC 0.930–0.931. Combined with the hand-engineered features, HistGradientBoosting gets ROC-AUC 0.950 ± 0.003 (vs 0.946) and precision 0.950 (vs 0.895), but F1 0.865 (vs 0.872) and PR-AUC 0.898 (vs 0.907). This is not a clear win, so it stays an optional experiment.
+
 ## Current Scope
 
 This project builds a deterministic synthetic identity fraud detection pipeline with:
@@ -50,9 +82,11 @@ Test set: 1,776 customers, including 180 fraud customers.
 | Random Forest | Tabular + Network | 0.9623 | 0.8509 | 0.7611 | 0.8035 | 0.9153 | 1572 | 24 | 43 | 137 |
 | HistGradientBoosting | Tabular + Network | 0.9600 | 0.8263 | 0.7667 | 0.7954 | 0.9184 | 1567 | 29 | 42 | 138 |
 | Random Forest | Tabular + Temporal | 0.9482 | 0.8929 | 0.5556 | 0.6849 | 0.7888 | 1584 | 12 | 80 | 100 |
-| HistGradientBoosting | Tabular + Temporal | 0.9398 | 0.7483 | 0.6111 | 0.6728 | 0.7888 | 1559 | 37 | 70 | 110 |
+| HistGradientBoosting | Tabular + Temporal | 0.9403 | 0.7500 | 0.6167 | 0.6768 | 0.7853 | 1559 | 37 | 69 | 111 |
 | Random Forest | Combined | 0.9707 | 0.9051 | 0.7944 | 0.8462 | 0.9396 | 1581 | 15 | 37 | 143 |
-| HistGradientBoosting | Combined | 0.9769 | 0.9212 | 0.8444 | 0.8812 | 0.9492 | 1583 | 13 | 28 | 152 |
+| HistGradientBoosting | Combined | 0.9747 | 0.8947 | 0.8500 | 0.8718 | 0.9457 | 1578 | 18 | 27 | 153 |
+
+The two HistGradientBoosting rows marked Tabular + Temporal and Combined were corrected in Weeks 6–8. The originally reported values (Tabular + Temporal: F1 0.6728, ROC-AUC 0.7888; Combined: F1 0.8812, ROC-AUC 0.9492) came from lossy CSV float parsing; see "Bugs found and fixed" above. The conclusions are unchanged.
 
 Accuracy is not sufficient for this imbalanced problem. The tabular Random Forest gets high accuracy by almost never finding fraud. Recall, F1, ROC-AUC, and confusion matrices are the main signals.
 
@@ -122,12 +156,14 @@ The network model still performs well because fraud customers remain more likely
 
 ## Validation
 
-Latest full clean run:
+Latest full clean run (Weeks 6–8, research pipeline + app end to end + contrastive):
 
 ```text
 pytest -q
-2 passed in 70.50s
+18 passed
 ```
+
+`npm run typecheck` in `frontend/` passes with strict TypeScript. Every page was also exercised in headless Chrome with no console errors: upload → mapping → live progress → dashboards → ring confirm/dismiss → retrain → version history, in light and dark mode.
 
 The model runner writes:
 
@@ -144,8 +180,14 @@ The model runner writes:
 - Temporal events are customer-level aggregates, not application-time features.
 - HistGradientBoosting does not provide native feature importances in this implementation.
 - The notebook is still a basic exploration notebook and has not been upgraded into a full report.
+- The web app is single-user: no login, and one background worker runs jobs one at a time.
+- Unlabeled uploads are scored by a model trained on synthetic data. It transfers well to data shaped like the generator's, but real data with very different sharing patterns will need analyst feedback (or labels) before the scores can be trusted.
+- Attribute values shared by more than 50 customers are ignored as generic; a genuine super-hub ring would be reported in the data-quality notes, not as a ring.
+- Linked groups larger than 30 are split with Louvain communities, which can cut a large ring into pieces.
 
 ## Week 4 Recommendations
+
+(PR-AUC, recall/precision at top K, F1-based threshold selection and a customer-level review workflow were added in Weeks 6–8. Time-aware snapshots remain deferred; see "Future work" in the README.)
 
 - Add time-aware graph snapshots so features are computed only from information available before a scoring date.
 - Add an application-level prediction target instead of a customer-level end-state label.

@@ -42,11 +42,13 @@ TEMPORAL_FEATURES = [
 
 
 def load_split(csv_path: Path) -> pd.DataFrame:
-    return pd.read_csv(csv_path)
+    return pd.read_csv(csv_path, float_precision="round_trip")
 
 
 def merge_features(df: pd.DataFrame, feature_path: Path, columns: list[str]) -> pd.DataFrame:
-    feature_df = pd.read_csv(feature_path)
+    # round_trip parsing reads floats back bit-exactly; pandas' default parser
+    # can be off by one ulp, which changes HistGradientBoosting results.
+    feature_df = pd.read_csv(feature_path, float_precision="round_trip")
     merged = df.merge(feature_df[["customer_id", *columns]], on="customer_id", how="left")
     merged[columns] = merged[columns].fillna(0)
     return merged

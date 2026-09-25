@@ -5,3 +5,9 @@ python-dateutil>=2,<3
 pytest>=8,<9
 jupyter>=1,<2
 scikit-learn>=1.4
+# Web app (backend API, identity graph, tests)
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+networkx>=3.2
+httpx>=0.27

@@ -12,7 +12,24 @@ def load_attribute_links(csv_path: Path) -> pd.DataFrame:
     return pd.read_csv(csv_path)
 
 
-def build_edge_records(df: pd.DataFrame) -> pd.DataFrame:
+CORE_ATTRIBUTE_TYPES = ["phone", "email", "address", "device"]
+
+
+def edge_attribute_types(df: pd.DataFrame) -> list[str]:
+    """Return the core attribute types followed by any extra types in ``df``.
+
+    Extra types (for example ``ip`` or ``national_id`` from an uploaded
+    dataset) are appended in sorted order so the output is deterministic.
+    """
+    present = set(df["attribute_type"].dropna().astype(str).unique()) if len(df) else set()
+    return CORE_ATTRIBUTE_TYPES + sorted(present - set(CORE_ATTRIBUTE_TYPES))
+
+
+def build_edge_records(
+    df: pd.DataFrame,
+    attribute_types: list[str] | None = None,
+    max_group_size: int | None = None,
+) -> pd.DataFrame:
     """Create edge records with shared attribute flags.
 
     Returns a DataFrame with columns:
@@ -22,13 +39,19 @@ def build_edge_records(df: pd.DataFrame) -> pd.DataFrame:
         shared_email
         shared_address
         shared_device
+        shared_<extra type> (one per extra attribute type, if any)
         shared_attribute_count
+
+    ``max_group_size`` skips attribute values shared by more customers than
+    the limit. Values such as placeholder phone numbers or an office address
+    would otherwise create a clique of every account that uses them.
     """
+    attr_types = attribute_types if attribute_types is not None else edge_attribute_types(df)
+    flag_names = [f"shared_{attr}" for attr in attr_types]
     # Initialize a dict to accumulate flags per unordered pair
     edge_dict = {}
 
     # Process each attribute type separately
-    attr_types = ["phone", "email", "address", "device"]
     for attr in attr_types:
         # Subset rows for this attribute type
         sub = df[df["attribute_type"] == attr]
@@ -37,16 +60,13 @@ def build_edge_records(df: pd.DataFrame) -> pd.DataFrame:
             customers = group["customer_id"].unique()
             if len(customers) < 2:
                 continue  # No edge to create
+            if max_group_size is not None and len(customers) > max_group_size:
+                continue  # Generic/hub value, not an identity link
             # Generate all unordered pairs (combinations) of customers
             for a, b in itertools.combinations(sorted(customers), 2):
                 key = (a, b)
                 if key not in edge_dict:
-                    edge_dict[key] = {
-                        "shared_phone": 0,
-                        "shared_email": 0,
-                        "shared_address": 0,
-                        "shared_device": 0,
-                    }
+                    edge_dict[key] = dict.fromkeys(flag_names, 0)
                 # Set the appropriate flag
                 flag_name = f"shared_{attr}"
                 edge_dict[key][flag_name] = 1
@@ -63,7 +83,8 @@ def build_edge_records(df: pd.DataFrame) -> pd.DataFrame:
                 "shared_attribute_count": shared_count,
             }
         )
-    return pd.DataFrame(rows)
+    columns = ["source_customer_id", "target_customer_id", *flag_names, "shared_attribute_count"]
+    return pd.DataFrame(rows, columns=columns)
 
 
 def save_edges(df: pd.DataFrame, out_path: Path) -> None:

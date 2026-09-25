@@ -83,9 +83,13 @@ def generate_customer_profile(fake: Faker, rng: np.random.Generator, is_fraud: i
     }
 
 
-def generate_legitimate_customers(fake: Faker, rng: np.random.Generator) -> pd.DataFrame:
+def generate_legitimate_customers(
+    fake: Faker, rng: np.random.Generator, n_customers: int | None = None
+) -> pd.DataFrame:
+    if n_customers is None:
+        n_customers = config.N_LEGITIMATE_CUSTOMERS
     rows = [
         generate_customer_profile(fake, rng, config.LEGITIMATE_LABEL, config.NO_RING_ID)
-        for _ in range(config.N_LEGITIMATE_CUSTOMERS)
+        for _ in range(n_customers)
     ]
     return pd.DataFrame(rows)
