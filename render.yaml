@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: synthetic-fraud-detection
+    runtime: python
+    plan: free
+    buildCommand: >
+      pip install -r requirements.txt &&
+      cd frontend && npm install && npm run build
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+    # NOTE: Render's free plan does not support persistent disks.
+    # Uploaded data / the SQLite DB under storage/ will be wiped on every
+    # deploy and on spin-down-after-idle restarts. Fine for a demo; if you
+    # need durability, upgrade to a paid instance and mount a disk at
+    # /var/data, then set FRAUD_APP_STORAGE=/var/data/storage.
